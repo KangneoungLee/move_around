@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+
+
+<node pkg="move_around" type="move_around.py" name="move_around_node" output="screen">
+
+          <param name="tf_prefix"            value=""/>
+	  <param name="robot_base_frame"            value="base_link"/>
+          <param name="wait_duration"            value="20"/>
+       
+     </node>
+
+</launch>
