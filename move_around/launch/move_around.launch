@@ -4,10 +4,10 @@
 
 <node pkg="move_around" type="move_around.py" name="move_around_node" output="screen">
 
-          <param name="tf_prefix"            value=""/>
+          <param name="tf_prefix"            value="Robot2"/>
 	  <param name="robot_base_frame"            value="base_link"/>
           <param name="map_frame"            value="map"/>
-          <param name="wait_duration"            value="20"/>
+          <param name="wait_duration"            value="10"/>
        
      </node>
 

@@ -8,11 +8,12 @@ from move_base_msgs.msg import MoveBaseAction,  MoveBaseGoal, MoveBaseResult
 #from visitgpsclient.msg import VisitPositionsRobotGPSAction,  VisitPositionsRobotGPSGoal, VisitPositionsRobotGPSResult
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Int8,Float32
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from tf.transformations import quaternion_from_euler
+from rover_motor_driver.srv import *
 
 
-multiple_goal_position =[[2.5,2],[5,5],[3,7.5],[0,10],[-2.5,7],[-5,5],[-2.5,2.5],[0,0]]
+multiple_goal_position =[[-2.5/3,-3/3],[0/3,0/3],[-2/3,2.5/3],[-5/3,5/3],[-7.5/3,2/3],[0/3,0/3],[-7.5/3,-2.5/3],[-5/3,-5/3]]
 
 class  SetMoveAroundGoal():
       
@@ -20,52 +21,92 @@ class  SetMoveAroundGoal():
       rospy.init_node('set_move_around_goal')
 
       self.tf_prefix = rospy.get_param('~tf_prefix',"")
-      self.map_frame = self.tf_prefix+rospy.get_param('~map_frame',"map")
+
+      if(self.tf_prefix != "") :
+         self.tf_prefix = self.tf_prefix +"/"
+      
+      self.map_frame = rospy.get_param('~map_frame',"map")
       self.robot_frame = self.tf_prefix+rospy.get_param('~robot_base_frame',"base_link")
       self.action_result_wait_duration = rospy.get_param('~wait_duration',20)
       #self.using_waypoint = rospy.get_param('~using_wapoint_for_gps_input',False)
 
       self.cancel_pub = rospy.Publisher("move_base/cancel", GoalID, queue_size=1)
 
+      rospy.Subscriber('move_around/start', Int8,  self.StartTopicCallback, queue_size = 1)
       rospy.Subscriber('move_around/pause', Int8,  self.PauseTopicCallback, queue_size = 1)
       rospy.Subscriber('move_around/reset', Int8,  self.ResetTopicCallback, queue_size = 1)
+      
+      self.move_around_srv = rospy.ServiceProxy('wheel_odompose_srv',WheelOdomSet)
             
       self.move_base_action_client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
             
       self.goal_index = 0
-      self.pause_loop = False
+      self.pause_loop = True
 
       self.rate = rospy.Rate(10)
 
-   def ResetTopicCallback(self,msg):
-      if msg.data >= 1 :
-         cancel_msg = GoalID()
-         self.cancel_pub.publish(cancel_msg)
-         rospy.loginfo("*********Reset the move around ******")
-         self.goal_index = 0
+   def StartTopicCallback(self,msg):
+      pose_set = PoseWithCovarianceStamped()
+      pose_set.pose.pose.position.x = 0
+      pose_set.pose.pose.position.y = 0
+      pose_set.pose.pose.position.z = 0
+      pose_set.pose.pose.orientation.x = 0
+      pose_set.pose.pose.orientation.y = 0
+      pose_set.pose.pose.orientation.z = 0
+      pose_set.pose.pose.orientation.w = 1
+       
+      rospy.loginfo("*********wait for the wheel odometry service ******")
+      rospy.wait_for_service('wheel_odompose_srv')
+      rospy.loginfo("*********the wheel odometry service connected******")
 
-         if self.pause_loop == True :
-            rospy.loginfo("*********You shoud restart the move around by publishing the 'move_around/pause' topic with 0 value ******")
+      resp = self.move_around_srv(pose_set)
+
+      if resp.result == True:
+         rospy.loginfo("*********Success wheel odometry set******")
+      else:
+         rospy.logwarn("*********Fail wheel odometry set******")
+
+      self.pause_loop = False
+      rospy.loginfo("*********start the move around ******")
+
+   def ResetTopicCallback(self,msg):
+
+      cancel_msg = GoalID()
+      self.cancel_pub.publish(cancel_msg)
+      rospy.loginfo("*********Reset the move around ******")
+      self.goal_index = 0
+
+      if self.pause_loop == True :
+         rospy.loginfo("*********You shoud restart the move around by publishing the 'move_around/start' topic with any value ******")
 
    def PauseTopicCallback(self,msg):
-      if msg.data >= 1 :
-         self.pause_loop = True
-         cancel_msg = GoalID()
-         self.cancel_pub.publish(cancel_msg)
-         rospy.loginfo("*********Pause the move around ******")
-      else : 
-         self.pause_loop = False
-         rospy.loginfo("*********Restart the move around ******")
+
+      self.pause_loop = True
+      cancel_msg = GoalID()
+      self.cancel_pub.publish(cancel_msg)
+      rospy.loginfo("*********Pause the move around ***** to start move around, publish the 'move_around/start' topic with any value ******")
+      #if msg.data >= 1 :
+      #   self.pause_loop = True
+      #   cancel_msg = GoalID()
+      #   self.cancel_pub.publish(cancel_msg)
+      #   rospy.loginfo("*********Pause the move around ******")
+      #else : 
+      #   self.pause_loop = False
+      #   rospy.loginfo("*********Restart the move around ******")
 
 
    def run(self):
 
       goal = MoveBaseGoal()
 
-      while not rospy.is_shutdown() : 
+      while not rospy.is_shutdown() :
+ 
+         if self.pause_loop == True :
+            continue 
 
+         rospy.loginfo("*********start to detect move base action server******")
          self.move_base_action_client.wait_for_server()
-         rospy.loginfo("*********detect move base action server******")
+         rospy.loginfo("*********move base action server detected******")
          Server_active_time = rospy.Time.now()
 
          goal.target_pose.header.frame_id = self.map_frame
